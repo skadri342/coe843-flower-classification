@@ -35,7 +35,7 @@ cd backend
 3. Activate the virtual environment:
    - On Windows:
      ```bash
-     venv\Scripts\activate
+     source venv\Scripts\activate
      ```
    - On Unix or MacOS:
      ```bash
