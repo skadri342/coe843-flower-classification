@@ -4,6 +4,8 @@ import os
 from werkzeug.utils import secure_filename
 from PIL import Image
 import numpy as np
+from model import load_saved_model
+import tensorflow as tf
 
 app = Flask(__name__)
 CORS(app)
@@ -13,8 +15,20 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
+# Load the model when the app starts
+model = load_saved_model()
+class_names = ['daisy', 'dandelion', 'rose', 'sunflower', 'tulip']  # Your class names
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def preprocess_image(image_path):
+    img = tf.keras.preprocessing.image.load_img(
+        image_path, target_size=(180, 180)
+    )
+    img_array = tf.keras.preprocessing.image.img_to_array(img)
+    img_array = tf.expand_dims(img_array, 0)
+    return img_array
 
 @app.route('/api/predict', methods=['POST'])
 def predict():
@@ -28,11 +42,17 @@ def predict():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         
-        # TODO: Add model prediction logic here
-        # For now, return a mock response
+        # Preprocess the image
+        processed_image = preprocess_image(filepath)
+        
+        # Make prediction
+        predictions = model.predict(processed_image)
+        predicted_class = class_names[np.argmax(predictions[0])]
+        confidence = float(np.max(predictions[0]))
+        
         return jsonify({
-            'prediction': 'daisy',
-            'confidence': 0.95,
+            'prediction': predicted_class,
+            'confidence': confidence,
             'filepath': filepath
         })
 
@@ -42,10 +62,6 @@ def predict():
 def health_check():
     return jsonify({'status': 'healthy'}), 200
 
-@app.route("/")
-def hello():
-    return "Hello World!"
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-    app.run(port=5001, debug=True)  # Change the port number here
+    app.run(debug=True)
