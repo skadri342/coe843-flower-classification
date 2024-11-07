@@ -4,3 +4,4 @@ __pycache__/
 static/uploads/*
 !static/uploads/.gitkeep
 data/
+saved_model/
