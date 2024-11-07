@@ -20,9 +20,54 @@ def create_and_train_model():
     # Load the dataset
     data_dir = pathlib.Path(path)
 
+    """ batch_size:
+
+    The batch size in machine learning training is the number of samples processed before the model's internal parameters, like weights, are updated.
+    Setting the batch size is essential because it affects the training process, model performance, and computational efficiency. Here’s why it matters:
+
+    Memory Management: Larger batch sizes require more memory, as they load more data into memory at once. Smaller batches are more memory-efficient, 
+    making them suitable for systems with limited memory, like a local machine or Raspberry Pi.
+
+    Training Speed: Larger batch sizes tend to make training faster because they enable parallel computation on larger chunks of data. However, they 
+    require more powerful hardware (e.g., GPUs), as the computation load is high.
+
+    Model Stability and Convergence: Small batch sizes can introduce more noise into the model’s gradient updates, which may slow down convergence 
+    but can help the model find a better generalization (i.e., avoiding local minima). Large batch sizes often make training smoother and more stable, 
+    leading to faster convergence, but they can also risk converging to poorer solutions due to reduced noise and generalization ability.
+
+    Epoch and Iteration Balance: With a smaller batch size, the model updates weights more frequently (more iterations per epoch), while larger batch 
+    sizes mean fewer updates per epoch. This can influence the number of epochs required for the model to converge effectively.
+    """
+
     # Parameters for the loader and the training data is specified
     img_height, img_width = 180, 180
     batch_size = 32
+
+    """ data_augmentation:
+
+    A data augmentation pipeline with transformations like random horizontal flips, rotations, and zooms helps improve the robustness and generalization 
+    of a machine learning model. Here’s how each augmentation type contributes:
+
+    Increasing Data Variety: Data augmentation artificially increases the size and variety of the training dataset without collecting more data. By 
+    applying random transformations, the model is exposed to more diverse examples, which helps it generalize better to new, unseen data.
+
+    Reducing Overfitting: When training data is limited or has specific patterns, a model can become too familiar with the training set, leading to 
+    overfitting. Random transformations create different versions of each image, encouraging the model to learn broader patterns rather than memorizing 
+    specific features.
+
+    Invariance to Transformations:
+
+    Horizontal Flips make the model less sensitive to the left-right orientation of objects, which is useful for tasks where the orientation doesn’t 
+    impact the label (e.g., distinguishing cats and dogs).
+
+    Rotations help the model become invariant to slight changes in object orientation, which is crucial in real-world settings where objects aren’t 
+    perfectly aligned.
+
+    Zooms expose the model to different scales of objects, helping it learn to recognize objects regardless of their distance from the camera or their size.
+
+    Overall, a data augmentation pipeline enriches the training data, helping the model generalize to real-world variations, improve accuracy, and reduce 
+    sensitivity to minor changes in input data.
+    """
 
     # Data augmentation for training
     data_augmentation = tf.keras.Sequential([
@@ -30,6 +75,20 @@ def create_and_train_model():
         layers.RandomRotation(0.2),
         layers.RandomZoom(0.2),
     ])
+
+    """ creating the datasets:
+
+    Dataset Creation:
+
+    Creates two datasets using tf.keras.preprocessing.image_dataset_from_directory:
+
+    Training dataset (80% of data)
+    Validation dataset (20% of data)
+
+    Uses categorical labels (one-hot encoded)
+    Sets a random seed of 123 for reproducibility
+    Stores class names from the training dataset
+    """
 
     # Create raw datasets first
     raw_train_ds = tf.keras.preprocessing.image_dataset_from_directory(
@@ -56,10 +115,99 @@ def create_and_train_model():
     class_names = raw_train_ds.class_names
     print("Classes:", class_names)
 
+    """
+    The AUTOTUNE function in machine learning, specifically in TensorFlow’s tf.data API, is a setting that allows TensorFlow to automatically determine the 
+    best configuration for data pipeline operations. AUTOTUNE optimizes the performance of data loading, transforming, and feeding operations by dynamically 
+    adjusting the level of parallelism (i.e., the number of CPU threads or resources used) based on available system resources.
+
+    Here’s why AUTOTUNE is valuable:
+
+    Efficient Data Loading: Data loading can become a bottleneck if the model has to wait for data to be loaded or processed before training. By using 
+    AUTOTUNE, TensorFlow optimizes data loading to keep the model's training process as smooth and fast as possible.
+
+    Parallel Processing: When you apply transformations (such as data augmentation, shuffling, or batch loading), AUTOTUNE adjusts the number of parallel 
+    calls to process data quickly. This is especially useful when working with complex pre-processing, like image augmentation, which can be computationally 
+    intensive.
+
+    Dynamic Adjustment: AUTOTUNE can adjust in real-time depending on system load and resource availability. This means it can scale up or down the level of 
+    parallel processing to optimize speed without overloading system resources, making it ideal for diverse hardware environments.
+
+    Improved Training Throughput: With AUTOTUNE, training throughput is often maximized, as data is fetched and processed just in time for each training step. 
+    This helps prevent "idle time" where the model waits for data, thereby reducing overall training time.
+
+    Dataset Performance Optimization:
+
+    Applies performance optimizations to both datasets:
+
+    .cache() to keep images in memory
+    .shuffle(1000) for training data to randomize order
+    .prefetch() to optimize data loading
+    """
+
     # Configure datasets for performance
     AUTOTUNE = tf.data.AUTOTUNE
     train_ds = raw_train_ds.cache().shuffle(1000).prefetch(buffer_size=AUTOTUNE)
     val_ds = raw_val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+
+    """ model creation:
+
+    This model architecture leverages the ResNet50 model as a foundational structure and then customizes it with additional layers for a specific classification 
+    task. Here’s a breakdown of each component:
+
+    1. Uses ResNet50 as the Base Model
+
+    Pre-trained on ImageNet: ResNet50 is a deep convolutional neural network pre-trained on the large ImageNet dataset, which contains millions of labeled images 
+    across a thousand categories. By using a pre-trained ResNet50, the model benefits from feature representations that capture a wide range of image features.
+
+    Excludes Top Classification Layers: The top classification layers in ResNet50 are specific to ImageNet’s 1,000 classes. By excluding these, we can add custom 
+    layers suited to the specific number of classes in the new task.
+
+    Uses Average Pooling: Average pooling is applied to reduce the output dimensions after the convolutional layers, condensing the information and reducing the 
+    spatial size while retaining essential features.
+
+    Input Shape of (180, 180, 3): The model expects images resized to 180x180 pixels with 3 color channels (RGB). This shape ensures consistency across all input 
+    images.
+
+    2. Initially Freezes All ResNet50 Weights
+
+    Freezing weights means the pre-trained layers of ResNet50 are not updated during the initial training. This step helps preserve the learned features and 
+    prevents overfitting, especially if the dataset is small or similar to ImageNet. Once the added layers are trained, these layers can be unfrozen for fine-tuning.
+
+    3. Adds Custom Layers on Top
+
+    Data Augmentation Layer: This layer applies transformations like random rotations, flips, or zooms, helping the model learn from more diverse data and 
+    generalize better to new inputs.
+
+    Preprocessing Lambda Layer: A lambda layer may be used for custom preprocessing (e.g., scaling pixel values, standardizing images) to ensure all data is 
+    prepared consistently before feeding it to the ResNet50 base.
+
+    ResNet50 Base: The main feature extraction component of the model. This part of the architecture identifies relevant patterns, textures, and structures in the 
+    images.
+
+    Dense Layer (256 Units, ReLU Activation): A fully connected layer with 256 neurons and ReLU activation function introduces non-linearity, helping the model 
+    learn complex patterns from the features extracted by ResNet50.
+
+    Dropout Layer (50% Dropout): Dropout randomly disables 50% of neurons during training, preventing overfitting by encouraging the model to rely on various 
+    features rather than memorizing specific patterns.
+
+    Dense Layer (128 Units, ReLU Activation): Another fully connected layer with 128 neurons, adding more capacity to learn from the features. This layer is also 
+    activated by ReLU, which introduces non-linearity.
+
+    Dropout Layer (30% Dropout): This second dropout layer disables 30% of neurons, further reducing overfitting while preserving more neurons than the previous 
+    dropout layer.
+
+    Final Classification Layer (Softmax Activation): The final layer classifies the input image. The number of neurons in this layer corresponds to the number of 
+    target classes, with softmax activation to output class probabilities for multi-class classification.
+
+    Summary of the Architecture Flow
+
+    Data Input -> Data augmentation -> Preprocessing -> ResNet50 for feature extraction.
+    Fully Connected Layers: Dense (256, ReLU) -> Dropout (50%) -> Dense (128, ReLU) -> Dropout (30%).
+    Output Layer: Final dense layer with softmax for class probabilities.
+
+    This model structure leverages ResNet50’s powerful feature extraction, enhances generalization with data augmentation and dropout, and customizes classification 
+    with dense layers tailored to the specific task.
+    """
 
     # specify the input shape size (180 x 180 px)
     input_shape = (180, 180, 3)
@@ -91,12 +239,97 @@ def create_and_train_model():
     # Get summary
     resnet_model.summary()
 
+
+    """ model compilation:
+
+    Model compilation is the step where the model is configured with the optimizer, loss function, and evaluation metrics it will use during training. Here’s a 
+    breakdown of each component:
+
+    1. Optimizer: Adam with 0.001 Learning Rate
+
+    Adam (Adaptive Moment Estimation): Adam is a popular optimization algorithm for training deep learning models. It combines the advantages of two other optimizers, 
+    AdaGrad and RMSProp, to adaptively adjust the learning rate for each parameter based on estimates of the first (mean) and second (variance) moments of the 
+    gradients. This helps the model converge faster and more efficiently.
+
+    Learning Rate of 0.001: The learning rate determines the step size the optimizer takes when adjusting the model's weights during training. A learning rate of 
+    0.001 is commonly used for Adam and provides a balance between convergence speed and stability. If the rate is too high, the model may fail to converge; if too 
+    low, training can be very slow.
+
+    2. Loss Function: Categorical Crossentropy
+
+    Categorical Crossentropy: This loss function is used for multi-class classification tasks where each input belongs to one of multiple classes. It measures the 
+    difference between the predicted probability distribution (from the model) and the true probability distribution (the actual labels).
+
+    How it Works: Categorical crossentropy penalizes the model more heavily for being confident in the wrong prediction. If the model assigns a high probability to 
+    an incorrect class, the loss will be high. Minimizing this loss encourages the model to improve the accuracy of its class probability predictions.
+
+    3. Metric: Accuracy
+
+    Accuracy: This metric tracks the percentage of correct predictions (i.e., when the predicted class matches the true class) during training and evaluation. 
+    Accuracy is an intuitive and straightforward metric for multi-class classification, making it useful for understanding how well the model is performing overall.
+
+    Why Use Accuracy: Since categorical crossentropy can sometimes be harder to interpret, accuracy provides an easily understandable measure of performance, 
+    allowing you to track the model’s improvement over time.
+
+    Summary of Model Compilation
+
+    In this compilation setup:
+
+    Adam optimizer with a learning rate of 0.001 adjusts weights efficiently, balancing speed and stability.
+    Categorical crossentropy loss helps the model improve its probability predictions for multi-class classification.
+    Accuracy metric provides an interpretable evaluation metric for tracking model performance.
+    
+    Together, these settings make the model effective for multi-class classification, with a focus on both accurate predictions and efficient training.
+    """
+
     # Compile the model
     resnet_model.compile(
         optimizer=Adam(learning_rate=0.001),
         loss='categorical_crossentropy',
         metrics=['accuracy']
     )
+
+    """ training callbacks:
+
+    Training callbacks are additional functions that help control the training process by responding to specific events during training, like changes in validation 
+    loss. In this model, two callbacks are used to improve training efficiency and prevent overfitting:
+
+    1. Early Stopping
+
+    Purpose: Early stopping monitors model performance on the validation set and stops training if the performance no longer improves. This prevents overfitting by 
+    stopping training once the model begins to perform worse on the validation set (an indication that it may be "memorizing" the training data instead of 
+    generalizing).
+
+    Monitors Validation Loss: The callback watches the validation loss, which reflects how well the model performs on unseen data. If validation loss stops improving, 
+    it’s often a sign that further training won’t yield better results.
+
+    Patience of 3 Epochs: "Patience" is the number of epochs to wait for improvement in the monitored metric before stopping training. Here, patience is set to 3 
+    epochs, so if the validation loss doesn’t improve for 3 consecutive epochs, training will stop.
+
+    Restores Best Weights: Early stopping saves the model weights from the epoch where validation loss was lowest. If the model overfits in later epochs, these saved 
+    weights are restored, ensuring that the best-performing version of the model is saved.
+
+    2. Learning Rate Reduction on Plateau
+
+    Purpose: This callback dynamically adjusts the learning rate to encourage further improvement when the model’s progress slows. Lowering the learning rate allows 
+    the model to make finer adjustments to weights, which can be helpful for reaching a better minimum in the loss function.
+
+    Monitors Validation Loss: Like early stopping, this callback also monitors validation loss to detect when the model has reached a "plateau" (i.e., when validation 
+    loss stops decreasing).
+
+    Reduces Learning Rate by 80% (factor=0.2): If a plateau is detected, the learning rate is reduced by a factor of 0.2 (or 80%), making it five times smaller. This 
+    smaller learning rate helps the model make more precise adjustments, which can sometimes yield better performance.
+
+    Patience of 2 Epochs: Here, patience is set to 2 epochs, so if the validation loss doesn’t improve for 2 consecutive epochs, the learning rate is reduced. This 
+    allows the model to explore finer weight adjustments without requiring a restart.
+
+    Summary of Training Callbacks
+
+    Early Stopping: Prevents overfitting by stopping training when validation loss stops improving, with the added benefit of restoring the best weights.
+    Learning Rate Reduction: Lowers the learning rate when the model's progress stalls, helping the model continue making improvements by taking smaller steps.
+
+    Together, these callbacks create a more efficient training process that helps the model converge more effectively while reducing the risk of overfitting.
+    """
 
     # Create callbacks
     callbacks = [
@@ -112,6 +345,15 @@ def create_and_train_model():
         )
     ]
 
+    """ initial training:
+
+    Initial Training:
+
+    Trains for up to 20 epochs
+    Uses the training and validation datasets
+    Applies the defined callbacks
+    """
+
     # Train the model
     print("Training the model...")
     epochs = 20
@@ -121,6 +363,50 @@ def create_and_train_model():
         epochs=epochs,
         callbacks=callbacks
     )
+
+    """ fine-tuning the model:
+
+    Fine-tuning is a technique used to improve model performance by gradually training a pre-trained model on a new dataset. After initial training, 
+    fine-tuning allows parts of the pre-trained model’s weights to adjust to better suit the new data. Here’s what each step of this fine-tuning process involves:
+
+    1. Unfreezes the ResNet50 Base Model
+
+    Initially, the ResNet50 model's layers were frozen, meaning they didn’t update during training. This helped retain the knowledge from its original training 
+    on ImageNet while allowing the new custom layers to learn.
+
+    Unfreezing means unlocking selected layers in ResNet50, so they can now be updated to better match the new dataset’s specific features.
+
+    2. Keeps the First Many Layers Frozen (All Except Last 30 Layers)
+
+    The layers in a deep model like ResNet50 are hierarchically organized: lower layers detect more general features (like edges and textures), while higher layers 
+    detect more specific features (like shapes or object parts).
+
+    By keeping the earlier layers frozen and unfreezing only the last 30 layers, the model preserves general feature knowledge while fine-tuning the higher layers 
+    to recognize details relevant to the new task. This approach helps prevent overfitting, as the lower layers are kept stable while only specific patterns are 
+    adapted.
+
+    3. Recompiles the Model with a Lower Learning Rate (0.0001)
+
+    Lower Learning Rate (0.0001): When fine-tuning, a lower learning rate is set to avoid making large updates that could disrupt the useful patterns learned in 
+    earlier training.
+
+    A smaller learning rate allows for more gradual, precise adjustments, refining the model’s parameters rather than drastically changing them.
+
+    4. Trains for an Additional 10 Epochs
+
+    After unfreezing the selected layers, the model is trained for another 10 epochs. This allows the model to adjust the unfrozen weights to better capture the 
+    specific patterns and characteristics of the new dataset.
+
+    Ten epochs provide enough time for the model to fine-tune without risking overfitting or excessive training.
+
+    Summary of Fine-Tuning Process
+    Selective Unfreezing: Unlocks the final layers to allow for adjustment, while keeping the earlier layers’ knowledge intact.
+    Lower Learning Rate: Ensures adjustments are gradual, helping the model adapt to the new data without disrupting previous knowledge.
+    Additional Training: Fine-tunes the model over a limited number of epochs to optimize its performance on the new dataset.
+
+    This approach combines the robustness of the pre-trained ResNet50 model with the flexibility to adapt to new, task-specific features. Fine-tuning with these 
+    steps allows the model to achieve higher accuracy on the new task without extensive retraining.
+    """
 
     # Fine-tune the model
     print("\nFine-tuning the model...")
