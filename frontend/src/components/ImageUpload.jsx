@@ -1,14 +1,23 @@
 import { useState } from 'react';
 import axios from 'axios';
+import PropTypes from 'prop-types';
 
 const ImageUpload = ({ onPredictionStart, onPredictionComplete }) => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [error, setError] = useState(null);
 
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
     if (file) {
+      if (!file.type.startsWith('image/')) {
+        setError('Please select an image file');
+        return;
+      }
       setSelectedFile(file);
+      setError(null);
+      
+      // Create preview
       const reader = new FileReader();
       reader.onloadend = () => {
         setPreviewUrl(reader.result);
@@ -24,10 +33,9 @@ const ImageUpload = ({ onPredictionStart, onPredictionComplete }) => {
     const formData = new FormData();
     formData.append('file', selectedFile);
 
-    onPredictionStart();
-
     try {
-      const response = await axios.post('http://localhost:5001/api/predict', formData, {
+      onPredictionStart();
+      const response = await axios.post('http://localhost:5000/api/predict', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -35,7 +43,7 @@ const ImageUpload = ({ onPredictionStart, onPredictionComplete }) => {
       onPredictionComplete(response.data);
     } catch (error) {
       console.error('Error:', error);
-      onPredictionComplete({ error: 'Failed to process image' });
+      onPredictionComplete({ error: error.response?.data?.error || 'Failed to process image' });
     }
   };
 
@@ -64,23 +72,29 @@ const ImageUpload = ({ onPredictionStart, onPredictionComplete }) => {
             type="file" 
             className="hidden" 
             onChange={handleFileSelect}
-            accept=".png,.jpg,.jpeg"
+            accept="image/*"
           />
         </label>
       </div>
+      {error && (
+        <p className="text-red-500 text-center">{error}</p>
+      )}
       {selectedFile && (
         <div className="text-center">
           <p className="text-sm text-gray-500">Selected: {selectedFile.name}</p>
-          <button
-            onClick={handleSubmit}
-            className="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
-          >
+          <button onClick={handleSubmit} className="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors">
             Classify Image
           </button>
         </div>
       )}
     </div>
   );
+};
+
+// PropTypes validation
+ImageUpload.propTypes = {
+  onPredictionStart: PropTypes.func.isRequired,
+  onPredictionComplete: PropTypes.func.isRequired
 };
 
 export default ImageUpload;

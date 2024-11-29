@@ -6,7 +6,12 @@ const App = () => {
   const [prediction, setPrediction] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handlePrediction = (result) => {
+  const handlePredictionStart = () => {
+    setIsLoading(true);
+    setPrediction(null);
+  };
+
+  const handlePredictionComplete = (result) => {
     setPrediction(result);
     setIsLoading(false);
   };
@@ -18,8 +23,8 @@ const App = () => {
           <h1 className="text-2xl font-bold mb-4">Flower Classification</h1>
           <div className="space-y-4">
             <ImageUpload 
-              onPredictionStart={() => setIsLoading(true)}
-              onPredictionComplete={handlePrediction}
+              onPredictionStart={handlePredictionStart}
+              onPredictionComplete={handlePredictionComplete}
             />
             {(prediction || isLoading) && (
               <PredictionResult 
