@@ -2,6 +2,8 @@ import { useState } from 'react';
 import axios from 'axios';
 import PropTypes from 'prop-types';
 
+const API_URL = import.meta.env.VITE_API_URL;
+
 const ImageUpload = ({ onPredictionStart, onPredictionComplete }) => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
@@ -35,7 +37,7 @@ const ImageUpload = ({ onPredictionStart, onPredictionComplete }) => {
 
     try {
       onPredictionStart();
-      const response = await axios.post('http://localhost:5000/api/predict', formData, {
+      const response = await axios.post(`${API_URL}/api/predict`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
