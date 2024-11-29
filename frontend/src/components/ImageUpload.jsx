@@ -37,7 +37,7 @@ const ImageUpload = ({ onPredictionStart, onPredictionComplete }) => {
 
     try {
       onPredictionStart();
-      const response = await axios.post(`${API_URL}/api/predict`, formData, {
+      const response = await axios.post(`${API_URL}/mlapi/predict`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
