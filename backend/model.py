@@ -13,6 +13,19 @@ from tensorflow.keras.layers import Dense, Flatten, Input, Dropout
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.optimizers import Adam
 
+# Default Tensorflow to use GPU instead of CPU
+physical_devices = tf.config.list_physical_devices('GPU')
+if physical_devices:
+    try:
+        # Allow memory growth
+        for device in physical_devices:
+            tf.config.experimental.set_memory_growth(device, True)
+            
+        # Set the visible devices
+        tf.config.set_visible_devices(physical_devices[0], 'GPU')
+    except RuntimeError as e:
+        print(e)
+
 def create_and_train_model():
     # Path to the dataset
     path = "data/flowers"
