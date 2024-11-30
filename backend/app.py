@@ -36,7 +36,7 @@ def preprocess_image(image_path):
     image_array = np.expand_dims(image_array, axis=0)
     return image_array
 
-@app.route('/mlapi/predict', methods=['POST'])
+@app.route('/api/predict', methods=['POST'])
 def predict():
     if 'file' not in request.files:
         return jsonify({'error': 'No file part'}), 400
