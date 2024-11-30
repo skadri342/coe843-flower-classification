@@ -12,6 +12,15 @@ from tensorflow.keras import layers
 from tensorflow.keras.layers import Dense, Flatten, Input, Dropout
 from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.applications.resnet50 import preprocess_input
+from tensorflow.keras import metrics
+import splitfolders
+
+input_folder = 'data/flowers'
+output_folder = 'data/flowers_split'
+
+# Split with a 70%, 15%, 15% ratio for training, testing, and validation respectively (Use seed=42 for reproducibility of split)
+splitfolders.ratio(input_folder, output=output_folder, seed=42, ratio=(.7, .15, .15))
 
 # Default Tensorflow to use GPU instead of CPU
 physical_devices = tf.config.list_physical_devices('GPU')
@@ -27,11 +36,61 @@ if physical_devices:
         print(e)
 
 def create_and_train_model():
-    # Path to the dataset
-    path = "data/flowers"
+    # Define the base directory where your split dataset is located
+    base_dir = 'data/flowers_split'
+
+    # Define the dataset splits
+    splits = ['train', 'val', 'test']
+
+    # Define the allowed image extensions
+    image_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.gif', '.tiff')
+
+    # Initialize a dictionary to hold counts of each flower class
+    counts = {}
+
+    # Iterate over each split
+    for split in splits:
+        split_dir = os.path.join(base_dir, split)
+        counts[split] = {}
+        total_images_in_split = 0
+
+        # Get the list of class directories in the current split directory
+        classes = [d for d in os.listdir(split_dir) if os.path.isdir(os.path.join(split_dir, d))]
+
+        # Iterate over each class
+        for cls in classes:
+            class_dir = os.path.join(split_dir, cls)
+
+            # List all files in the class directory
+            files = os.listdir(class_dir)
+
+            # Filter out only image files
+            images = [f for f in files if f.lower().endswith(image_extensions)]
+
+            # Count the number of images
+            num_images = len(images)
+
+            # Store the count in the dictionary
+            counts[split][cls] = num_images
+
+            # Keep track of the total number of images in the split
+            total_images_in_split += num_images
+
+        # Store the total count for the split
+        counts[split]['total'] = total_images_in_split
+
+    # Display the counts
+    for split in splits:
+        print(f'\n{split.capitalize()} set:')
+        print(f'Total images: {counts[split]["total"]}')
+        for cls in counts[split]:
+            if cls != 'total':
+                print(f'  {cls}: {counts[split][cls]} images')
 
     # Load the dataset
-    data_dir = pathlib.Path(path)
+    train_dir = 'data/flowers_split/train'
+    val_dir = 'data/flowers_split/val'
+    test_dir = 'data/flowers_split/test'
 
     """ batch_size:
 
@@ -53,7 +112,7 @@ def create_and_train_model():
     """
 
     # Parameters for the loader and the training data is specified
-    img_height, img_width = 180, 180
+    img_height, img_width = 224, 224
     batch_size = 32
 
     """ data_augmentation:
@@ -87,6 +146,8 @@ def create_and_train_model():
         layers.RandomFlip("horizontal"),
         layers.RandomRotation(0.2),
         layers.RandomZoom(0.2),
+        layers.RandomContrast(0.3),
+        layers.RandomBrightness(0.2)
     ])
 
     """ creating the datasets:
@@ -103,28 +164,31 @@ def create_and_train_model():
     Stores class names from the training dataset
     """
 
-    # Create raw datasets first
+    # Create raw dataset for training from directory
     raw_train_ds = tf.keras.preprocessing.image_dataset_from_directory(
-        data_dir,
-        validation_split=0.2,
-        subset="training",
-        seed=123,
+        train_dir,
         label_mode='categorical',
         image_size=(img_height, img_width),
         batch_size=batch_size
     )
 
+    # Create raw dataset for validation from directory
     raw_val_ds = tf.keras.preprocessing.image_dataset_from_directory(
-        data_dir,
-        validation_split=0.2,
-        subset="validation",
-        seed=123,
+        val_dir,
         label_mode='categorical',
         image_size=(img_height, img_width),
         batch_size=batch_size
     )
 
-    # Get class names before applying pipeline operations
+        # Create raw dataset for test from directory
+    raw_test_ds = tf.keras.preprocessing.image_dataset_from_directory(
+        test_dir,
+        label_mode='categorical',
+        image_size=(img_height, img_width),
+        batch_size=batch_size
+    )
+
+    # Get class names
     class_names = raw_train_ds.class_names
     print("Classes:", class_names)
 
@@ -161,6 +225,7 @@ def create_and_train_model():
     AUTOTUNE = tf.data.AUTOTUNE
     train_ds = raw_train_ds.cache().shuffle(1000).prefetch(buffer_size=AUTOTUNE)
     val_ds = raw_val_ds.cache().prefetch(buffer_size=AUTOTUNE)
+    test_ds = raw_test_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
     """ model creation:
 
@@ -222,10 +287,10 @@ def create_and_train_model():
     with dense layers tailored to the specific task.
     """
 
-    # specify the input shape size (180 x 180 px)
-    input_shape = (180, 180, 3)
+    # specify the input shape size 224 width, 224 length, 3 channels for RGB
+    input_shape = (224, 224, 3)
 
-    # Create the model
+    # Create the base ResNet50 model initialized with imagenet weights, and without the fully connected layers
     resnet_base = tf.keras.applications.ResNet50(
         include_top=False,
         weights="imagenet",
@@ -233,10 +298,10 @@ def create_and_train_model():
         pooling='avg'
     )
 
-    # Freeze the pretrained weights
+    # Freeze the pretrained weights in RestNet50 Model
     resnet_base.trainable = False
 
-    # Create the model
+    # Create the model with our own fully connected layers and set data augmentation
     resnet_model = Sequential([
         Input(shape=input_shape),
         data_augmentation,
@@ -251,6 +316,9 @@ def create_and_train_model():
 
     # Get summary
     resnet_model.summary()
+
+    # Label smoothing for categorical crossentropy
+    loss = tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1)
 
 
     """ model compilation:
@@ -297,8 +365,8 @@ def create_and_train_model():
 
     # Compile the model
     resnet_model.compile(
-        optimizer=Adam(learning_rate=0.001),
-        loss='categorical_crossentropy',
+        optimizer=Adam(learning_rate=0.00017693),
+        loss=loss,
         metrics=['accuracy']
     )
 
@@ -344,11 +412,11 @@ def create_and_train_model():
     Together, these callbacks create a more efficient training process that helps the model converge more effectively while reducing the risk of overfitting.
     """
 
-    # Create callbacks
+    # Create callbacks for early stopping and learnig rate reduction
     callbacks = [
         tf.keras.callbacks.EarlyStopping(
             monitor='val_loss',
-            patience=3,
+            patience=5,
             restore_best_weights=True
         ),
         tf.keras.callbacks.ReduceLROnPlateau(
@@ -369,7 +437,7 @@ def create_and_train_model():
 
     # Train the model
     print("Training the model...")
-    epochs = 20
+    epochs = 25
     history = resnet_model.fit(
         train_ds,
         validation_data=val_ds,
@@ -423,27 +491,30 @@ def create_and_train_model():
 
     # Fine-tune the model
     print("\nFine-tuning the model...")
+
+    # Unfreeze ResNet50 base model layers
     resnet_base.trainable = True
-    # Freeze the first many layers
-    for layer in resnet_base.layers[:-30]:
+
+    # Freeze the bottom 5 layers
+    for layer in resnet_base.layers[:-5]:
         layer.trainable = False
 
     # Recompile the model
     resnet_model.compile(
-        optimizer=Adam(learning_rate=0.0001),
-        loss='categorical_crossentropy',
+        optimizer=Adam(learning_rate=0.000017693),
+        loss=loss,
         metrics=['accuracy']
     )
 
-    # Continue training
+    # Continue training to fine-tune the model
     history_fine = resnet_model.fit(
         train_ds,
         validation_data=val_ds,
-        epochs=10,
+        epochs=15,
         callbacks=callbacks
     )
 
-    # Combine histories
+    # Combine histories from initial training and fine-tuning
     for k in history.history:
         history.history[k].extend(history_fine.history[k])
 
@@ -492,7 +563,7 @@ def test_prediction(image_path=None):
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
         # Resize the image to match model's expected sizing
-        image_resized = cv2.resize(image, (180, 180))
+        image_resized = cv2.resize(image, (224, 224))
         
         # Preprocess using ResNet50's preprocessing
         image_array = tf.keras.applications.resnet50.preprocess_input(
