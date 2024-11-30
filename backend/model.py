@@ -448,7 +448,7 @@ def create_and_train_model():
         history.history[k].extend(history_fine.history[k])
 
     # Save the trained model
-    resnet_model.save('saved_model/flower_classifier.h5')
+    resnet_model.save('saved_model/flower_classifier')
     
     # Save the training history as a JSON file
     with open('saved_model/training_history.json', 'w') as f:
@@ -585,14 +585,16 @@ def load_and_plot():
 
 def load_saved_model():
     try:
-        model = load_model('saved_model/flower_classifier.h5')
-        print("Model loaded successfully!")
-        
-        # Load class names
+        # Load class names to get the correct number of classes
         with open('saved_model/class_names.json', 'r') as f:
             class_names = json.load(f)
+        num_classes = len(class_names)
+
+        model = tf.keras.models.load_model('saved_model/flower_classifier')
+        print("Model weights loaded successfully!")
+
         print("Available classes:", class_names)
-        
+
         return model, class_names
     except Exception as e:
         print(f"Error loading model: {str(e)}")
