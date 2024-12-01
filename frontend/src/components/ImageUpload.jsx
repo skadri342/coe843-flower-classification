@@ -4,10 +4,12 @@ import PropTypes from 'prop-types';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
-const ImageUpload = ({ onPredictionStart, onPredictionComplete }) => {
+const ImageUpload = ({ onPredictionStart, onPredictionComplete, onCartoonifyComplete }) => {
   const [selectedFile, setSelectedFile] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState(null);
+  const [originalPreviewUrl, setOriginalPreviewUrl] = useState(null);
+  const [cartoonPreviewUrl, setCartoonPreviewUrl] = useState(null);
   const [error, setError] = useState(null);
+  const [currentImageToClassify, setCurrentImageToClassify] = useState(null);
 
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
@@ -18,11 +20,13 @@ const ImageUpload = ({ onPredictionStart, onPredictionComplete }) => {
       }
       setSelectedFile(file);
       setError(null);
+      setCartoonPreviewUrl(null);
       
-      // Create preview
+      // Create preview of original image
       const reader = new FileReader();
       reader.onloadend = () => {
-        setPreviewUrl(reader.result);
+        setOriginalPreviewUrl(reader.result);
+        setCurrentImageToClassify(file);
       };
       reader.readAsDataURL(file);
     }
@@ -30,14 +34,14 @@ const ImageUpload = ({ onPredictionStart, onPredictionComplete }) => {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    if (!selectedFile) return;
+    if (!currentImageToClassify) return;
 
     const formData = new FormData();
-    formData.append('file', selectedFile);
+    formData.append('file', currentImageToClassify);
 
     try {
       onPredictionStart();
-      const response = await axios.post(`${API_URL}/api/predict`, formData, {
+      const response = await axios.post(`${API_URL}/api_model/predict`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -49,15 +53,54 @@ const ImageUpload = ({ onPredictionStart, onPredictionComplete }) => {
     }
   };
 
+  const handleCartoonify = async (event) => {
+    event.preventDefault();
+    if (!selectedFile) return;
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    try {
+      const response = await axios.post(`${API_URL}/api_model/cartoonify`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      // Create preview of cartoonified image
+      const cartoonImageUrl = `${API_URL}/api_model/${response.data.cartoon_path}`;
+      
+      // Create a File object from the selected file with a new name
+      const cartoonFile = new File([selectedFile], 'cartoon_image.jpg', { type: 'image/jpeg' });
+
+      setCartoonPreviewUrl(cartoonImageUrl);
+      setCurrentImageToClassify(cartoonFile);
+      
+      // Trigger callback with cartoon image details
+      onCartoonifyComplete(response.data);
+    } catch (error) {
+      console.error('Error:', error);
+      setError(error.response?.data?.error || 'Failed to cartoonify image');
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-center w-full">
         <label className="flex flex-col items-center justify-center w-full h-64 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
-          {previewUrl ? (
+          {cartoonPreviewUrl ? (
             <div className="relative w-full h-full">
               <img 
-                src={previewUrl} 
-                alt="Preview" 
+                src={cartoonPreviewUrl} 
+                alt="Cartoonified Preview" 
+                className="absolute inset-0 w-full h-full object-contain p-2"
+              />
+            </div>
+          ) : originalPreviewUrl ? (
+            <div className="relative w-full h-full">
+              <img 
+                src={originalPreviewUrl} 
+                alt="Original Preview" 
                 className="absolute inset-0 w-full h-full object-contain p-2"
               />
             </div>
@@ -82,10 +125,18 @@ const ImageUpload = ({ onPredictionStart, onPredictionComplete }) => {
         <p className="text-red-500 text-center">{error}</p>
       )}
       {selectedFile && (
-        <div className="text-center">
-          <p className="text-sm text-gray-500">Selected: {selectedFile.name}</p>
-          <button onClick={handleSubmit} className="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors">
+        <div className="flex justify-center space-x-4">
+          <button 
+            onClick={handleSubmit} 
+            className="mt-2 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+          >
             Classify Image
+          </button>
+          <button 
+            onClick={handleCartoonify} 
+            className="mt-2 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600 transition-colors"
+          >
+            Cartoonify Image
           </button>
         </div>
       )}
@@ -96,7 +147,8 @@ const ImageUpload = ({ onPredictionStart, onPredictionComplete }) => {
 // PropTypes validation
 ImageUpload.propTypes = {
   onPredictionStart: PropTypes.func.isRequired,
-  onPredictionComplete: PropTypes.func.isRequired
+  onPredictionComplete: PropTypes.func.isRequired,
+  onCartoonifyComplete: PropTypes.func.isRequired
 };
 
 export default ImageUpload;
