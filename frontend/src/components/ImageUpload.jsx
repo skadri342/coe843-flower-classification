@@ -10,18 +10,32 @@ const ImageUpload = ({ onPredictionStart, onPredictionComplete, onCartoonifyComp
   const [cartoonPreviewUrl, setCartoonPreviewUrl] = useState(null);
   const [error, setError] = useState(null);
   const [currentImageToClassify, setCurrentImageToClassify] = useState(null);
+  const [fileSize, setFileSize] = useState(null); // Store the file size
 
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
     if (file) {
+      const fileSizeInMB = file.size / (1024 * 1024); // Convert bytes to MB
       if (!file.type.startsWith('image/')) {
         setError('Please select an image file');
         return;
       }
+      if (fileSizeInMB > 1) {
+        setError('File size exceeds the 1MB limit');
+        setSelectedFile(null); // Reset selected file if exceeds size
+        setFileSize(null);
+        setOriginalPreviewUrl(null);
+        return;
+      }
+
       setSelectedFile(file);
       setError(null);
+      setFileSize({
+        kb: (file.size / 1024).toFixed(2),  // Display size in KB
+        mb: fileSizeInMB.toFixed(2),        // Display size in MB
+      });
       setCartoonPreviewUrl(null);
-      
+
       // Create preview of original image
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -109,8 +123,9 @@ const ImageUpload = ({ onPredictionStart, onPredictionComplete, onCartoonifyComp
               <svg className="w-8 h-8 mb-4 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
                 <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
               </svg>
-              <p className="mb-2 text-sm text-gray-500"><span className="font-semibold">Click to upload</span> or drag and drop</p>
+              <p className="mb-2 text-sm text-gray-500"><span className="font-semibold">Click to upload</span></p>
               <p className="text-xs text-gray-500">PNG, JPG or JPEG</p>
+              <p className="text-xs text-gray-500">Max file size: 1MB</p>
             </div>
           )}
           <input 
@@ -121,10 +136,18 @@ const ImageUpload = ({ onPredictionStart, onPredictionComplete, onCartoonifyComp
           />
         </label>
       </div>
+
+      {fileSize && !error && (
+        <div className="text-center text-sm text-gray-600">
+          <p>File size: {fileSize.kb} KB ({fileSize.mb} MB)</p>
+        </div>
+      )}
+
       {error && (
         <p className="text-red-500 text-center">{error}</p>
       )}
-      {selectedFile && (
+
+      {selectedFile && !error && (
         <div className="flex justify-center space-x-4">
           <button 
             onClick={handleSubmit} 
